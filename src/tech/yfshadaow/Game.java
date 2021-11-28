@@ -114,8 +114,14 @@ public class Game extends BukkitRunnable implements Listener {
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent pde) {
+        if (!players.contains(pde.getEntity())) {
+            return;
+        }
         devils.remove(pde.getEntity());
         humans.remove(pde.getEntity());
+        for (Player p: players) {
+            p.sendMessage("§f" + pde.getEntity().getName() + " §c的灵魂被收割了！");
+        }
     }
     @EventHandler
     public void freezeGui(EntityDamageByEntityEvent edbee) {
@@ -124,6 +130,9 @@ public class Game extends BukkitRunnable implements Listener {
         }
         if (!(edbee.getEntity() instanceof Player)) {
             return;
+        }
+        if (humans.contains(edbee.getDamager())) {
+            edbee.setCancelled(true);
         }
         if (devils.contains(edbee.getDamager()) && humans.contains(edbee.getEntity())) {
             ((Player)edbee.getDamager()).addPotionEffect(new PotionEffect(PotionEffectType.SLOW,40,254,false,false));
@@ -314,6 +323,7 @@ public class Game extends BukkitRunnable implements Listener {
                     p.teleport(new Location(world, -26,52,-1044));
                 }
                 for (Player p: players) {
+                    p.setScoreboard(tag);
                     p.sendTitle("§b鬼将在20秒后现身！",null,2,16,2);
                     p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,2f);
                     p.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION,999999,0,false,false));
@@ -366,7 +376,6 @@ public class Game extends BukkitRunnable implements Listener {
                 for (Player p : players) {
                     p.sendTitle("§e游戏开始！",null,2,16,2);
                     p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,2f);
-                    p.setScoreboard(tag);
                 }
 
             }, 500);
