@@ -1,0 +1,6 @@
+api-version: 1.13
+name: Tag
+main: tech.yfshadaow.Tag
+version: 1.0
+author: YFshadaow
+depend: [GameUtils]
