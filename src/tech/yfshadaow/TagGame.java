@@ -41,7 +41,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.function.Predicate;
 
-public class Game extends BukkitRunnable implements Listener {
+public class TagGame extends BukkitRunnable implements Listener {
     World world;
     Scoreboard scoreboard;
     Scoreboard tag;
@@ -57,7 +57,7 @@ public class Game extends BukkitRunnable implements Listener {
     ItemStack diamond; ItemStack red; ItemStack heart; ItemStack clock; ItemStack emerald; ItemStack sugar;
     Location[] locations;
 
-    public Game(Tag plugin, long gameTime) {
+    public TagGame(Tag plugin, long gameTime) {
         this.plugin = plugin;
         this.players = plugin.players;
         this.humans = new ArrayList<>();
@@ -117,6 +117,7 @@ public class Game extends BukkitRunnable implements Listener {
         if (!players.contains(pde.getEntity())) {
             return;
         }
+        pde.getEntity().setGameMode(GameMode.SPECTATOR);
         devils.remove(pde.getEntity());
         humans.remove(pde.getEntity());
         for (Player p: players) {
