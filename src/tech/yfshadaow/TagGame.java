@@ -9,7 +9,6 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
-import org.bukkit.craftbukkit.v1_16_R3.CraftWorld;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
@@ -624,7 +623,7 @@ public class TagGame extends BukkitRunnable implements Listener {
         fw.detonate();
     }
     public long getTime(World world) {
-        return ((CraftWorld)world).getHandle().worldData.getTime();
+        return (world.getGameTime());
     }
 
 }
