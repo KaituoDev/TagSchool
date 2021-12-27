@@ -34,52 +34,51 @@ import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.NameTagVisibility;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
+import org.bukkit.util.BoundingBox;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import java.util.function.Predicate;
 
-public class TagGame extends BukkitRunnable implements Listener {
-    World world;
-    Scoreboard scoreboard;
-    Scoreboard tag;
-    Tag plugin;
-    List<Player> players;
-    List<Player> humans;
-    List<Player> devils;
-    Random random;
-    List<Integer> taskIds;
+import static tech.yfshadaow.GameUtils.*;
+import static tech.yfshadaow.GameUtils.getPlayerQuitData;
+
+public class TagGame extends Game implements Listener {
+    private static TagGame instance = new TagGame((Tag) Bukkit.getPluginManager().getPlugin("Tag"));
+    Scoreboard scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+    Scoreboard tag = Bukkit.getScoreboardManager().getNewScoreboard();
+    List<Player> humans = new ArrayList<>();
+    List<Player> devils = new ArrayList<>();
     long startTime;
     long gameTime;
     Team team;
+    boolean running = false;
     ItemStack diamond; ItemStack red; ItemStack heart; ItemStack clock; ItemStack emerald; ItemStack sugar;
-    Location[] locations;
+    Location[] locations= new Location[] {
+            new Location(world,-8.5,64,-1043.5),
+            new Location(world,-38.5,61,-1011.5),
+            new Location(world,-56.5,61,-1074.5),
+            new Location(world,-16.5,52,-1074.5),
+            new Location(world,-54.5,52,-1075.5),
+            new Location(world,-65.5,52,-1016.5),
+            new Location(world,-7.5,70,-1067.5),
+            new Location(world,-50.5,70,-1019.5),
+            new Location(world,-66.5,70,-1071.5),
+            new Location(world,-31.5,79,-1041.5)};
 
-    public TagGame(Tag plugin, long gameTime) {
+    public static TagGame getInstance() {
+        return instance;
+    }
+    private TagGame(Tag plugin) {
         this.plugin = plugin;
-        this.players = plugin.players;
-        this.humans = new ArrayList<>();
-        this.devils = new ArrayList<>();
-        this.random = new Random();
-        this.taskIds = new ArrayList<>();
-        this.world = Bukkit.getWorld("world");
-        this.gameTime = gameTime;
-        this.scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
-        this.tag = Bukkit.getScoreboardManager().getNewScoreboard();
-        tag.registerNewObjective("tag","dummy","鬼抓人");
+        initGame(plugin, "Tag", 5, new Location(world,-5, 203, -1002),BlockFace.NORTH,
+                new Location(world, -10,204,-1007),BlockFace.EAST,
+                new Location(world,-5, 202, -1007), new BoundingBox(-79, 85, -1083,0, 50, -1000));
+        players = plugin.players;
+        tag.registerNewObjective("tag", "dummy", "鬼抓人");
         tag.getObjective("tag").setDisplaySlot(DisplaySlot.SIDEBAR);
-        locations = new Location[] {
-                new Location(world,-8.5,64,-1043.5),
-                new Location(world,-38.5,61,-1011.5),
-                new Location(world,-56.5,61,-1074.5),
-                new Location(world,-16.5,52,-1074.5),
-                new Location(world,-54.5,52,-1075.5),
-                new Location(world,-65.5,52,-1016.5),
-                new Location(world,-7.5,70,-1067.5),
-                new Location(world,-50.5,70,-1019.5),
-                new Location(world,-66.5,70,-1071.5),
-                new Location(world,-31.5,79,-1041.5)};
         diamond = new ItemStack(Material.DIAMOND, 1);
         ItemMeta meta1 = diamond.getItemMeta();
         meta1.setDisplayName("冰冻鬼5秒");
@@ -229,24 +228,85 @@ public class TagGame extends BukkitRunnable implements Listener {
         humans.remove(pcge.getPlayer());
         devils.remove(pcge.getPlayer());
     }
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent pqe) {
-        players.remove(pqe.getPlayer());
-        humans.remove(pqe.getPlayer());
-        devils.remove(pqe.getPlayer());
-        pqe.getPlayer().setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+
+    public void savePlayerQuitData(Player p) {
+        PlayerQuitData quitData = new PlayerQuitData(p, this, gameUUID);
+        quitData.getData().put("team", whichGroup(p));
+        setPlayerQuitData(p.getUniqueId(), quitData);
+        players.remove(p);
+        humans.remove(p);
+        devils.remove(p);
     }
 
     @Override
-    public void run() {
-        World world = Bukkit.getWorld("world");
-        team = tag.registerNewTeam("tag");
-        team.setNameTagVisibility(NameTagVisibility.NEVER);
-        team.setCanSeeFriendlyInvisibles(false);
-        team.setAllowFriendlyFire(true);
-        for (Entity e :world.getNearbyEntities(new Location(world, -5,202,-1008),10,10,10) ) {
-            if (e instanceof Player) {
-                Player p = (Player) e;
+    protected void rejoin(Player p) {
+        if (!running) {
+            p.sendMessage("§c游戏已经结束！");
+            return;
+        }
+        if (!getPlayerQuitData(p.getUniqueId()).getGameUUID().equals(gameUUID)) {
+            p.sendMessage("§c游戏已经结束！");
+            return;
+        }
+        PlayerQuitData pqd = getPlayerQuitData(p.getUniqueId());
+        pqd.restoreBasicData(p);
+        players.add(p);
+        team.addPlayer(p);
+        p.setScoreboard(tag);
+        if (pqd.getData().get("team") != null) {
+            ((List<Player>)pqd.getData().get("team")).add(p);
+        }
+        setPlayerQuitData(p.getUniqueId(), null);
+    }
+
+    private List<Player> whichGroup(Player p) {
+        if (humans.contains(p)) {
+            return humans;
+        } else if (devils.contains(p)) {
+            return devils;
+        } else {
+            return null;
+        }
+    }
+
+
+    public void endGame() {
+        Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+            for (int i = -9; i <= -1; i++) {
+                world.getBlockAt(i, 199,-1003).setType(Material.REDSTONE_BLOCK);
+            }
+            for (Entity e: world.getNearbyEntities(new Location(world, 0,128,-1000),200,200,200)) {
+                if (e instanceof Item) {
+                    e.remove();
+                }
+            }
+            placeStartButton();
+            removeSpectateButton();
+            HandlerList.unregisterAll(this);
+            tag.getObjective("tag").getScore("剩余人数").setScore(0);
+            tag.getObjective("tag").getScore("剩余时间").setScore(0);
+        },100);
+        players.clear();
+        humans.clear();
+        devils.clear();
+        team.unregister();
+        List<Integer> taskIdsCopy = new ArrayList<>(taskIds);
+        taskIds.clear();
+        running = false;
+        gameUUID = UUID.randomUUID();
+        for (int i : taskIdsCopy) {
+            Bukkit.getScheduler().cancelTask(i);
+        }
+    }
+    @Override
+    protected void initGameRunnable() {
+        gameRunnable = () -> {
+            gameTime = Tag.gameTime;
+            team = tag.registerNewTeam("tag");
+            team.setNameTagVisibility(NameTagVisibility.NEVER);
+            team.setCanSeeFriendlyInvisibles(false);
+            team.setAllowFriendlyFire(true);
+            for (Player p : getStartingPlayers()) {
                 if (scoreboard.getTeam("tagR").hasPlayer(p)) {
                     devils.add(p);
                     players.add(p);
@@ -257,371 +317,218 @@ public class TagGame extends BukkitRunnable implements Listener {
                     team.addPlayer(p);
                 }
             }
-        }
-        if (players.size() < 2) {
-            for (Player p : players) {
-                p.sendMessage("§c至少需要2人才能开始游戏！");
-            }
-            players.clear();
-            humans.clear();
-            team.unregister();
+            if (players.size() < 2) {
+                for (Player p : players) {
+                    p.sendMessage("§c至少需要2人才能开始游戏！");
+                }
+                players.clear();
+                humans.clear();
+                team.unregister();
 
-        } else if (humans.size() == 0) {
-            for (Player p : players) {
-                p.sendMessage("§c至少需要1个人类才能开始游戏！");
-            }
-            players.clear();
-            humans.clear();
-            team.unregister();
-        } else if (devils.size() == 0) {
-            for (Player p : players) {
-                p.sendMessage("§c至少需要1个鬼才能开始游戏！");
-            }
-            players.clear();
-            humans.clear();
-            team.unregister();
-        } else {
-            for (int i = -9; i <= -1; i++) {
-                world.getBlockAt(i, 199,-1003).setType(Material.AIR);
-            }
-            startTime = getTime(world);
-            world.getBlockAt(-5,203,-1002).setType(Material.AIR);
-            Bukkit.getScheduler().runTask(plugin, ()-> {
+            } else if (humans.size() == 0) {
                 for (Player p : players) {
-                    p.sendTitle("§a游戏还有 5 秒开始",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                    p.getInventory().clear();
+                    p.sendMessage("§c至少需要1个人类才能开始游戏！");
                 }
-            });
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+                players.clear();
+                humans.clear();
+                team.unregister();
+            } else if (devils.size() == 0) {
                 for (Player p : players) {
-                    p.sendTitle("§a游戏还有 4 秒开始",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                    p.sendMessage("§c至少需要1个鬼才能开始游戏！");
                 }
-            },20);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a游戏还有 3 秒开始",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                players.clear();
+                humans.clear();
+                team.unregister();
+            } else {
+                for (int i = -9; i <= -1; i++) {
+                    world.getBlockAt(i, 199,-1003).setType(Material.AIR);
                 }
-            },40);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a游戏还有 2 秒开始",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },60);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a游戏还有 1 秒开始",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },80);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                Bukkit.getPluginManager().registerEvents(this,plugin);
-                for (Player p : humans) {
-                    p.teleport(new Location(world, -26,52,-1044));
-                }
-                for (Player p: players) {
-                    p.setScoreboard(tag);
-                    p.sendTitle("§b鬼将在20秒后现身！",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,2f);
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION,999999,0,false,false));
-                }
+                running = true;
+                startTime = getTime(world);
+                removeStartButton();
+                startCountdown();
+                Bukkit.getScheduler().runTask(plugin, ()-> {
+                    for (Player p : players) {
+                        p.getInventory().clear();
+                    }
+                });
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    Bukkit.getPluginManager().registerEvents(this,plugin);
+                    for (Player p : humans) {
+                        p.teleport(new Location(world, -26,52,-1044));
+                    }
+                    for (Player p: players) {
+                        p.setScoreboard(tag);
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION,999999,0,false,false));
+                    }
 
-            }, 100);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a5",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },400);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a4",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },420);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a3",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },440);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a2",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },460);
-            Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                for (Player p : players) {
-                    p.sendTitle("§a1",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
-                }
-            },480);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                Block block = world.getBlockAt(-10,204,-1007);
-                block.setType(Material.OAK_BUTTON);
-                BlockData data = block.getBlockData().clone();
-                ((Directional)data).setFacing(BlockFace.EAST);
-                block.setBlockData(data);
-                for (Player p: devils) {
-                    p.teleport(new Location(world, -26,52,-1044));
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.DAMAGE_RESISTANCE,999999,4,false,false));
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.INCREASE_DAMAGE,999999,1,false,false));
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED,999999,0,false,false));
-                    p.getInventory().setItem(EquipmentSlot.HEAD,new ItemStack(Material.SKELETON_SKULL));
-                }
-                for (Player p : players) {
-                    p.sendTitle("§e游戏开始！",null,2,16,2);
-                    p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,2f);
-                }
+                }, countDownSeconds * 20);
+                Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+                    for (Player p : players) {
+                        p.sendTitle("§a5",null,2,16,2);
+                        p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                    }
+                },countDownSeconds * 20 + 300);
+                Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+                    for (Player p : players) {
+                        p.sendTitle("§a4",null,2,16,2);
+                        p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                    }
+                },countDownSeconds * 20 + 320);
+                Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+                    for (Player p : players) {
+                        p.sendTitle("§a3",null,2,16,2);
+                        p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                    }
+                },countDownSeconds * 20 + 340);
+                Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+                    for (Player p : players) {
+                        p.sendTitle("§a2",null,2,16,2);
+                        p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                    }
+                },countDownSeconds * 20 + 360);
+                Bukkit.getScheduler().runTaskLater(plugin, ()-> {
+                    for (Player p : players) {
+                        p.sendTitle("§a1",null,2,16,2);
+                        p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,1f);
+                    }
+                },countDownSeconds * 20 + 380);
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    placeSpectateButton();
+                    for (Player p: devils) {
+                        p.teleport(new Location(world, -26,52,-1044));
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.DAMAGE_RESISTANCE,999999,4,false,false));
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.INCREASE_DAMAGE,999999,1,false,false));
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED,999999,0,false,false));
+                        p.getInventory().setItem(EquipmentSlot.HEAD,new ItemStack(Material.SKELETON_SKULL));
+                    }
+                    for (Player p : players) {
+                        p.sendTitle("§e游戏开始！",null,2,16,2);
+                        p.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_HARP,1f,2f);
+                    }
 
-            }, 500);
+                }, countDownSeconds * 20 + 400);
 
-            taskIds.add(Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
-                for (Player p: players) {
-                    if (devils.contains(p)) {
-                        for (Player victim : players) {
-                            if (humans.contains(victim)) {
-                                if (p.getLocation().distance(victim.getLocation()) < 10) {
-                                    victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
-                                    Bukkit.getScheduler().runTaskLater(plugin,() -> {
+                taskIds.add(Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
+                    for (Player p: players) {
+                        if (devils.contains(p)) {
+                            for (Player victim : players) {
+                                if (humans.contains(victim)) {
+                                    if (p.getLocation().distance(victim.getLocation()) < 10) {
                                         victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
-                                    }, 3);
+                                        Bukkit.getScheduler().runTaskLater(plugin,() -> {
+                                            victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
+                                        }, 3);
+                                    }
+                                    if (p.getLocation().distance(victim.getLocation()) < 5) {
+                                        Bukkit.getScheduler().runTaskLater(plugin,() -> {
+                                            victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
+                                        }, 10);
+                                        Bukkit.getScheduler().runTaskLater(plugin,() -> {
+                                            victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
+                                        }, 13);
+                                    }
+
                                 }
-                                if (p.getLocation().distance(victim.getLocation()) < 5) {
-                                    Bukkit.getScheduler().runTaskLater(plugin,() -> {
-                                        victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
-                                    }, 10);
-                                    Bukkit.getScheduler().runTaskLater(plugin,() -> {
-                                        victim.playSound(p.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASEDRUM,SoundCategory.BLOCKS,2f,0f);
-                                    }, 13);
-                                }
-
                             }
                         }
                     }
-                }
-            },500,20));
+                },500,20));
 
-            taskIds.add(Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
-                for (Player p: players) {
-                    p.sendMessage("§a道具已刷新！");
-                }
-                for (Location loc : locations) {
-                    double spawnChance = random.nextDouble();
-                    if (spawnChance < 0.5) {
-                        double spawnNo = random.nextDouble();
-                        if (spawnNo < (1f/36*10)) {
-                            world.dropItem(loc,diamond);
-                        } else if (spawnNo < 1f/36*20) {
-                            world.dropItem(loc,red);
-                        } else if (spawnNo < 1f/36*25) {
-                            world.dropItem(loc,clock);
-                        } else if (spawnNo < 1f/36*28) {
-                            world.dropItem(loc,emerald);
-                        } else if (spawnNo < 1f/36*33) {
-                            world.dropItem(loc,sugar);
-                        } else {
-                            world.dropItem(loc,heart);
-                        }
+                taskIds.add(Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
+                    for (Player p: players) {
+                        p.sendMessage("§a道具已刷新！");
                     }
-                }
-            },1100,1200));
-
-
-            taskIds.add(Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () ->{
-                long time = getTime(world);
-                if (time - startTime > gameTime) {
-                    List<Player> humansCopy = new ArrayList<>(humans);
-                    List<Player> playersCopy = new ArrayList<>(players);
-                    for (Player p : humansCopy) {
-                        spawnFirework(p.getLocation());
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },8);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },16);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },24);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },32);
-                    }
-                    for (Player p : playersCopy) {
-                        p.sendTitle("§e时间到，人类获胜！",null,5,50, 5);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            p.teleport(new Location(world,-5,202,-1008));
-                            Bukkit.getPluginManager().callEvent(new PlayerEndGameEvent(p));
-                        },100);
-                    }
-                    Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                        for (int i = -9; i <= -1; i++) {
-                            world.getBlockAt(i, 199,-1003).setType(Material.REDSTONE_BLOCK);
-                        }
-                        for (Entity e: world.getNearbyEntities(new Location(world, 0,128,-1000),200,200,200)) {
-                            if (e instanceof Item) {
-                                e.remove();
+                    for (Location loc : locations) {
+                        double spawnChance = random.nextDouble();
+                        if (spawnChance < 0.5) {
+                            double spawnNo = random.nextDouble();
+                            if (spawnNo < (1f/36*10)) {
+                                world.dropItem(loc,diamond);
+                            } else if (spawnNo < 1f/36*20) {
+                                world.dropItem(loc,red);
+                            } else if (spawnNo < 1f/36*25) {
+                                world.dropItem(loc,clock);
+                            } else if (spawnNo < 1f/36*28) {
+                                world.dropItem(loc,emerald);
+                            } else if (spawnNo < 1f/36*33) {
+                                world.dropItem(loc,sugar);
+                            } else {
+                                world.dropItem(loc,heart);
                             }
                         }
-                        world.getBlockAt(-10,204,-1007).setType(Material.AIR);
-                        Block block = world.getBlockAt(-5,203,-1002);
-                        block.setType(Material.OAK_BUTTON);
-                        BlockData data = block.getBlockData().clone();
-                        ((Directional)data).setFacing(BlockFace.NORTH);
-                        block.setBlockData(data);
-                        HandlerList.unregisterAll(this);
-                    },100);
-                    players.clear();
-                    humans.clear();
-                    devils.clear();
-                    team.unregister();
-                    List<Integer> taskIdsCopy = new ArrayList<>(taskIds);
-                    taskIds.clear();
-                    for (int i : taskIdsCopy) {
-                        Bukkit.getScheduler().cancelTask(i);
                     }
-                    return;
-                }
-                if (humans.size() <= 0) {
-                    List<Player> devilsCopy = new ArrayList<>(devils);
-                    List<Player> playersCopy = new ArrayList<>(players);
-                    for (Player p : devilsCopy) {
-                        spawnFirework(p.getLocation());
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },8);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },16);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },24);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },32);
-                    }
-                    for (Player p : playersCopy) {
-                        p.sendTitle("§e无人幸存，鬼获胜！",null,5,50, 5);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            p.teleport(new Location(world,-5,202,-1008));
-                            Bukkit.getPluginManager().callEvent(new PlayerEndGameEvent(p));
-                        },100);
-                    }
-                    Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                        for (int i = -9; i <= -1; i++) {
-                            world.getBlockAt(i, 199,-1003).setType(Material.REDSTONE_BLOCK);
+                },1100,1200));
+
+
+                taskIds.add(Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () ->{
+                    long time = getTime(world);
+                    if (time - startTime > gameTime) {
+                        List<Player> humansCopy = new ArrayList<>(humans);
+                        List<Player> playersCopy = new ArrayList<>(players);
+                        for (Player p : humansCopy) {
+                            spawnFireworks(p);
                         }
-                        for (Entity e: world.getNearbyEntities(new Location(world, 0,128,-1000),200,200,200)) {
-                            if (e instanceof Item) {
-                                e.remove();
+                        for (Player p : playersCopy) {
+                            p.sendTitle("§e时间到，人类获胜！",null,5,50, 5);
+                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                p.teleport(new Location(world,-5,202,-1008));
+                                Bukkit.getPluginManager().callEvent(new PlayerEndGameEvent(p, this));
+                            },100);
+                        }
+                        return;
+                    }
+                    if (humans.size() <= 0) {
+                        List<Player> devilsCopy = new ArrayList<>(devils);
+                        List<Player> playersCopy = new ArrayList<>(players);
+                        for (Player p : devilsCopy) {
+                            spawnFireworks(p);
+                        }
+                        for (Player p : playersCopy) {
+                            p.sendTitle("§e无人幸存，鬼获胜！",null,5,50, 5);
+                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                p.teleport(new Location(world,-5,202,-1008));
+                                Bukkit.getPluginManager().callEvent(new PlayerEndGameEvent(p, this));
+                            },100);
+                        }
+                        endGame();
+                        return;
+                    }
+                    if (devils.size() <= 0) {
+                        List<Player> humansCopy = new ArrayList<>(humans);
+                        List<Player> playersCopy = new ArrayList<>(players);
+                        for (Player p : humansCopy) {
+                            spawnFireworks(p);
+                        }
+                        for (Player p : playersCopy) {
+                            p.sendTitle("§e鬼不复存在，人类获胜！",null,5,50, 5);
+                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                p.teleport(new Location(world,-5,202,-1008));
+                                Bukkit.getPluginManager().callEvent(new PlayerEndGameEvent(p, this));
+                            },100);
+                        }
+                        endGame();
+                        return;
+                    }
+                    switch((int)(time - startTime)) {
+                        case 1200:
+                        case 2400:
+                        case 4800:
+                        case 7200:
+                            for (Player p : humans) {
+                                p.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING,200,0,false,false));
                             }
-                        }
-                        world.getBlockAt(-10,204,-1007).setType(Material.AIR);
-                        Block block = world.getBlockAt(-5,203,-1002);
-                        block.setType(Material.OAK_BUTTON);
-                        BlockData data = block.getBlockData().clone();
-                        ((Directional)data).setFacing(BlockFace.NORTH);
-                        block.setBlockData(data);
-                        HandlerList.unregisterAll(this);
-                    },100);
-                    players.clear();
-                    humans.clear();
-                    devils.clear();
-                    team.unregister();
-                    List<Integer> taskIdsCopy = new ArrayList<>(taskIds);
-                    taskIds.clear();
-                    for (int i : taskIdsCopy) {
-                        Bukkit.getScheduler().cancelTask(i);
+                            break;
+                        default:
+                            break;
                     }
-                    return;
-                }
-                if (devils.size() <= 0) {
-                    List<Player> humansCopy = new ArrayList<>(humans);
-                    List<Player> playersCopy = new ArrayList<>(players);
-                    for (Player p : humansCopy) {
-                        spawnFirework(p.getLocation());
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },8);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },16);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },24);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            spawnFirework(p.getLocation());
-                        },32);
-                    }
-                    for (Player p : playersCopy) {
-                        p.sendTitle("§e鬼不复存在，人类获胜！",null,5,50, 5);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            p.teleport(new Location(world,-5,202,-1008));
-                            Bukkit.getPluginManager().callEvent(new PlayerEndGameEvent(p));
-                        },100);
-                    }
-                    Bukkit.getScheduler().runTaskLater(plugin, ()-> {
-                        for (int i = -9; i <= -1; i++) {
-                            world.getBlockAt(i, 199,-1003).setType(Material.REDSTONE_BLOCK);
-                        }
-                        for (Entity e: world.getNearbyEntities(new Location(world, 0,128,-1000),200,200,200)) {
-                            if (e instanceof Item) {
-                                e.remove();
-                            }
-                        }
-                        world.getBlockAt(-10,204,-1007).setType(Material.AIR);
-                        Block block = world.getBlockAt(-5,203,-1002);
-                        block.setType(Material.OAK_BUTTON);
-                        BlockData data = block.getBlockData().clone();
-                        ((Directional)data).setFacing(BlockFace.NORTH);
-                        block.setBlockData(data);
-                        HandlerList.unregisterAll(this);
-                    },100);
-                    players.clear();
-                    humans.clear();
-                    devils.clear();
-                    team.unregister();
-                    List<Integer> taskIdsCopy = new ArrayList<>(taskIds);
-                    taskIds.clear();
-                    for (int i : taskIdsCopy) {
-                        Bukkit.getScheduler().cancelTask(i);
-                    }
-                    return;
-                }
-                switch((int)(time - startTime)) {
-                    case 1200:
-                    case 2400:
-                    case 4800:
-                    case 7200:
-                        for (Player p : humans) {
-                            p.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING,200,0,false,false));
-                        }
-                        break;
-                    default:
-                        break;
-                }
-                tag.getObjective("tag").getScore("剩余人数").setScore(humans.size());
-                tag.getObjective("tag").getScore("剩余时间").setScore((int)((gameTime - (time - startTime)) / 20));
-            },500,1));
-        }
+                    tag.getObjective("tag").getScore("剩余人数").setScore(humans.size());
+                    tag.getObjective("tag").getScore("剩余时间").setScore((int)((gameTime - (time - startTime)) / 20));
+                },500,1));
+            }
+        };
     }
-    public static void spawnFirework(Location location){
-        Location loc = location;
-        loc.setY(loc.getY() + 0.9);
-        Firework fw = (Firework) loc.getWorld().spawnEntity(loc, EntityType.FIREWORK);
-        FireworkMeta fwm = fw.getFireworkMeta();
 
-        fwm.setPower(2);
-        fwm.addEffect(FireworkEffect.builder().withColor(Color.LIME).flicker(true).build());
-
-        fw.setFireworkMeta(fwm);
-        fw.detonate();
-    }
     public long getTime(World world) {
         return (world.getGameTime());
     }

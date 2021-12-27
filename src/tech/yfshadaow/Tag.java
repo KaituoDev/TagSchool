@@ -17,11 +17,16 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Tag extends JavaPlugin implements Listener {
-    World world;
-    List<Player> players;
-    long gameTime;
+import static tech.yfshadaow.GameUtils.unregisterGame;
+import static tech.yfshadaow.GameUtils.world;
 
+public class Tag extends JavaPlugin implements Listener {
+    static List<Player> players;
+    static long gameTime;
+
+    public static TagGame getGameInstance() {
+        return TagGame.getInstance();
+    }
     @EventHandler
     public void onButtonClicked(PlayerInteractEvent pie) {
         if (!pie.getAction().equals(Action.RIGHT_CLICK_BLOCK)) {
@@ -31,8 +36,7 @@ public class Tag extends JavaPlugin implements Listener {
             return;
         }
         if (pie.getClickedBlock().getLocation().equals(new Location(world,-5, 203, -1002))) {
-            TagGame game = new TagGame(this,gameTime);
-            game.runTask(this);
+            TagGame.getInstance().startGame();
         }
     }
     @EventHandler
@@ -61,13 +65,13 @@ public class Tag extends JavaPlugin implements Listener {
         }
     }
     public void onEnable() {
-        this.world = Bukkit.getWorld("world");
-        this.players = new ArrayList<>();
+        players = new ArrayList<>();
         Bukkit.getPluginManager().registerEvents(this, this);
         gameTime = 6000;
         Sign sign = (Sign) world.getBlockAt(-5,204,-1002).getState();
         sign.setLine(2,"当前时间为 " + gameTime/1200 + " 分钟");
         sign.update();
+        GameUtils.registerGame(getGameInstance());
     }
 
     public void onDisable() {
@@ -76,9 +80,10 @@ public class Tag extends JavaPlugin implements Listener {
         if (players.size() > 0) {
             for (Player p : players) {
                 p.teleport(new Location(world, 0.5,89.0,0.5));
-                Bukkit.getPluginManager().callEvent(new PlayerChangeGameEvent(p));
+                Bukkit.getPluginManager().callEvent(new PlayerChangeGameEvent(p, getGameInstance(), null));
             }
         }
+        unregisterGame(getGameInstance());
     }
 
 }
