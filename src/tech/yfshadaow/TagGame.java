@@ -73,7 +73,7 @@ public class TagGame extends Game implements Listener {
     }
     private TagGame(Tag plugin) {
         this.plugin = plugin;
-        initGame(plugin, "Tag", 5, new Location(world,-5, 203, -1002),BlockFace.NORTH,
+        initGame(plugin, "Tag","§c鬼抓人§f-学校", 5, new Location(world,-5, 203, -1002),BlockFace.NORTH,
                 new Location(world, -10,204,-1007),BlockFace.EAST,
                 new Location(world,-5, 202, -1007), new BoundingBox(-79, 85, -1083,0, 50, -1000));
         players = plugin.players;
