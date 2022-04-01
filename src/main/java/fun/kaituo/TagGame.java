@@ -1,6 +1,8 @@
-package tech.yfshadaow;
+package fun.kaituo;
 
 
+import fun.kaituo.event.PlayerChangeGameEvent;
+import fun.kaituo.event.PlayerEndGameEvent;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.*;
@@ -42,8 +44,8 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.function.Predicate;
 
-import static tech.yfshadaow.GameUtils.*;
-import static tech.yfshadaow.GameUtils.getPlayerQuitData;
+import static fun.kaituo.GameUtils.*;
+import static fun.kaituo.GameUtils.getPlayerQuitData;
 
 public class TagGame extends Game implements Listener {
     private static TagGame instance = new TagGame((Tag) Bukkit.getPluginManager().getPlugin("Tag"));
@@ -55,6 +57,7 @@ public class TagGame extends Game implements Listener {
     long gameTime;
     Team team;
     boolean running = false;
+    int countDownSeconds = 10;
     ItemStack diamond; ItemStack red; ItemStack heart; ItemStack clock; ItemStack emerald; ItemStack sugar;
     Location[] locations= new Location[] {
             new Location(world,-8.5,64,-1043.5),
@@ -73,10 +76,11 @@ public class TagGame extends Game implements Listener {
     }
     private TagGame(Tag plugin) {
         this.plugin = plugin;
-        initGame(plugin, "Tag","§c鬼抓人§f-学校", 5, new Location(world,-5, 203, -1002),BlockFace.NORTH,
-                new Location(world, -10,204,-1007),BlockFace.EAST,
-                new Location(world,-5, 202, -1007), new BoundingBox(-79, 85, -1083,0, 50, -1000));
-        players = plugin.players;
+        initializeGame(plugin, "Tag","§c鬼抓人§f-学校", new Location(world,-5, 202, -1007),
+                new BoundingBox(-79, 85, -1083,0, 50, -1000));
+        initializeButtons(new Location(world,-5, 203, -1002),BlockFace.NORTH,
+                new Location(world, -10,204,-1007),BlockFace.EAST);
+        players = Tag.players;
         tag.registerNewObjective("tag", "dummy", "鬼抓人");
         tag.getObjective("tag").setDisplaySlot(DisplaySlot.SIDEBAR);
         diamond = new ItemStack(Material.DIAMOND, 1);
@@ -290,23 +294,19 @@ public class TagGame extends Game implements Listener {
         humans.clear();
         devils.clear();
         team.unregister();
-        List<Integer> taskIdsCopy = new ArrayList<>(taskIds);
-        taskIds.clear();
         running = false;
         gameUUID = UUID.randomUUID();
-        for (int i : taskIdsCopy) {
-            Bukkit.getScheduler().cancelTask(i);
-        }
+        cancelGameTasks();
     }
     @Override
-    protected void initGameRunnable() {
+    protected void initializeGameRunnable() {
         gameRunnable = () -> {
             gameTime = Tag.gameTime;
             team = tag.registerNewTeam("tag");
             team.setNameTagVisibility(NameTagVisibility.NEVER);
             team.setCanSeeFriendlyInvisibles(false);
             team.setAllowFriendlyFire(true);
-            for (Player p : getStartingPlayers()) {
+            for (Player p : getPlayersNearHub(50,50,50)) {
                 if (scoreboard.getTeam("tagR").hasPlayer(p)) {
                     devils.add(p);
                     players.add(p);
@@ -346,7 +346,7 @@ public class TagGame extends Game implements Listener {
                 running = true;
                 startTime = getTime(world);
                 removeStartButton();
-                startCountdown();
+                startCountdown(countDownSeconds);
                 Bukkit.getScheduler().runTask(plugin, ()-> {
                     for (Player p : players) {
                         p.getInventory().clear();
