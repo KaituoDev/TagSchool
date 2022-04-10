@@ -344,7 +344,7 @@ public class TagGame extends Game implements Listener {
                     world.getBlockAt(i, 199,-1003).setType(Material.AIR);
                 }
                 running = true;
-                startTime = getTime(world);
+                startTime = getTime(world) + countDownSeconds * 20 + 400;
                 removeStartButton();
                 startCountdown(countDownSeconds);
                 Bukkit.getScheduler().runTask(plugin, ()-> {
