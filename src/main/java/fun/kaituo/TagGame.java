@@ -307,11 +307,11 @@ public class TagGame extends Game implements Listener {
             team.setCanSeeFriendlyInvisibles(false);
             team.setAllowFriendlyFire(true);
             for (Player p : getPlayersNearHub(50,50,50)) {
-                if (scoreboard.getTeam("tagR").hasPlayer(p)) {
+                if (scoreboard.getTeam("tagdevil").hasPlayer(p)) {
                     devils.add(p);
                     players.add(p);
                     team.addPlayer(p);
-                } else if (scoreboard.getTeam("tagB").hasPlayer(p)) {
+                } else if (scoreboard.getTeam("taghuman").hasPlayer(p)) {
                     humans.add(p);
                     players.add(p);
                     team.addPlayer(p);
